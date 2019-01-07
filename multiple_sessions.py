@@ -48,13 +48,14 @@ class MultipleSessions(AbstractSession):
 
 
 
-	def get_data(self,data_type,low_contrast=True,medium_contrast=True,high_contrast=True,average_over_trials=False):
+	def get_data(self,data_type,low_contrast=True,medium_contrast=True,high_contrast=True,average_over_trials=False,normalized=False):
 		if data_type == "time":
 			if self.time_steps is not None:
 				return self.data["time"]
 			else:
+				d = 0
 				for i in range(1,len(self.sessions)+1):
-					session = self.sessions[-i]
+					session = self.sessions[-i+d]
 					time_data = session.get_data("time")
 					if self.time_steps is None:
 						self.data["time"] = time_data
@@ -62,11 +63,12 @@ class MultipleSessions(AbstractSession):
 					else:
 						if len(time_data) != self.time_steps:
 							print("Session ignored, different time scale")
-							self.sessions.pop(-i)
+							self.sessions.pop(-i+d)
+							d += 1
 							
 				
 		else:
-			data = np.asarray(list(map(lambda x : x.get_data(data_type,low_contrast,medium_contrast,high_contrast,average_over_trials),self.sessions)))
+			data = np.asarray(list(map(lambda x : x.get_data(data_type,low_contrast,medium_contrast,high_contrast,average_over_trials,normalized),self.sessions)))
 			self.data[data_type] = np.concatenate(data)
 		return self.data[data_type]
 

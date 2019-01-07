@@ -61,12 +61,17 @@ class AbstractSession():
 			title += "averaged over contrast"
 		else:
 			title += "for contrast #" + str(contrast+1) 
-		title += " and " + data_type + " condition"
-		data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
+		title += " and " + str(data_type) + " condition"
+		if type(data_type) == type("str"):
+			data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
+		else:
+			data = np.asarray(list(map(lambda x : self.get_data(x,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast),data_type)))
+			data = np.concatenate(data)
 		if ao_contrast:
 			data_averaged = self.average_over(data,time=False,channels=True,trials=True,contrast=True)
 		else:
 			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
+			
 		self._core_figure_1(data_averaged,title,smooth,show)
 
 
@@ -159,7 +164,11 @@ class AbstractSession():
 			data = np.nanmean(averaged_data,0)
 		else:
 			if trials:
-				data = np.nanmean(data,2)
+				try:
+					data = np.nanmean(data,2)
+				except np.AxisError:
+					print(data.shape)
+					print("Warning, data shape unexpected")
 			if channels:
 				data = np.nanmean(data,1)
 			if time:
@@ -194,7 +203,11 @@ class AbstractSession():
 		for i in range(len(self.data[data_type])):
 			data_averaged = self.average_over(self.data[data_type][i],time=True,channels=False,trials=True)
 			corrupted_channels = np.isnan(data_averaged)
-			self.data[data_type][i] = self.data[data_type][i][:,~corrupted_channels,:]
+			try:
+				self.data[data_type][i] = self.data[data_type][i][:,~corrupted_channels,:]
+			except IndexError:
+				self.data[data_type][i] = self.data[data_type][i][:,~corrupted_channels]
+				
 
 	def get_contrast_value(self,contrast_index,round_number=2):
 		contrasts = self.get_data("contrast")

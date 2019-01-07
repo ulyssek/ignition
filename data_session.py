@@ -36,11 +36,15 @@ init_notebook_mode(connected=True)
 
 
 
+
+
 from abstract_session import AbstractSession
 
 
 
 class Session(AbstractSession):
+	
+	stimulus_offset = 228 #Magic number defining the stimulus offset
 
 
 	def __init__(self,file_name,directory_path="data/"):
@@ -50,7 +54,7 @@ class Session(AbstractSession):
 #################################################################################################
 ## Loading Data session
 
-	def get_data(self,data_type,low_contrast=True,medium_contrast=True,high_contrast=True,average_over_trials=False):
+	def get_data(self,data_type,low_contrast=True,medium_contrast=True,high_contrast=True,average_over_trials=False,normalized=False):
 		if data_type in self.data.keys():
 			data = self.data[data_type]
 			if not (low_contrast and medium_contrast and high_contrast):
@@ -64,12 +68,12 @@ class Session(AbstractSession):
 			text="AllTrials"
 		if data_type == "correct_rejections":
 			#We add here a default contrast for the correct_rejections trials
-			data = [full_data["Conditions"][0][0][text][0][0]["CR"][0][0]]
+			data = full_data["Conditions"][0][0][text][0][0]["CR"][0]
 			self.data[data_type] = data
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "false_alarm":
 			#We add here a default contrast for the false_alarm trials
-			data = [full_data["Conditions"][0][0][text][0][0]["FA"][0][0]]
+			data = full_data["Conditions"][0][0][text][0][0]["FA"][0]
 			self.data[data_type] = data
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "seen":
@@ -82,7 +86,7 @@ class Session(AbstractSession):
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "texture":
 			#We add here a default contrast for the texture trials
-			data = [full_data["Conditions"][0][0][text][0][0]["Text"][0][0]]
+			data = full_data["Conditions"][0][0][text][0][0]["Text"][0]
 			self.data[data_type] = data
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "time":
@@ -102,6 +106,20 @@ class Session(AbstractSession):
 			self.data[data_type] = np.asarray(data)
 		else:
 			raise(BaseException("Data Type not found"))
+		if normalized:
+			#Getting the baseline
+			electrode_averaged = self.average_over(data,trials=True,contrast=True)
+			electrode_averaged = electrode_averaged[0:self.stimulus_offset]
+			electrode_baseline = self.average_over(electrode_averaged,time=True)
+			
+			#Getting the normalisation factor
+			text = self.get_data("texture")[0]
+			electrode_texture_response = self.average_over(text,trials=True)
+			electrode_max_peak = np.max(electrode_texture_response-electrode_baseline,axis=0)
+			
+			#Normalizing the data
+			for i in range(len(data)):
+				data[i] = np.swapaxes((np.swapaxes(data[i],1,2)-electrode_baseline)/electrode_max_peak,1,2)
 		if not (low_contrast and medium_contrast and high_contrast):
 			index = self.get_contrast_index(low_contrast,medium_contrast,high_contrast)
 			data = data[index]
