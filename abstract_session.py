@@ -22,54 +22,11 @@ init_notebook_mode(connected=True)
 
 class AbstractSession():
 
+	stimulus_offset = 228 #Magic number defining the stimulus offset
 
 	
 #################################################################################################
 ## Ploting functions
-
-
-	def plot_figure_2(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,smooth=1,clip=False):
-		if ao_channels:
-			averaged_over = "channels"
-			displayed_over = "trials"
-		else:
-			averaged_over = "trials"
-			displayed_over = "channels"
-		title = "MUA over time over " + displayed_over + " averaged over " + averaged_over 
-		if data_type in ("seen","missed"):
-			if ao_contrast:
-				title += "averaged over contrast "
-			else:
-				title += " for contrast #" + str(contrast+1) + " and " 
-		title += data_type + " condition"
-		data = self.get_data(data_type)
-		if ao_contrast:
-			data_averaged = self.average_over(data,time=False,channels=ao_channels,trials=ao_trials,contrast=True)
-		else:
-			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
-		final_data = self.array_smoother(data_averaged,smooth)
-		if clip:
-			final_data = np.clip(final_data,-10,1)
-		fig = self._core_figure_2(final_data,title,displayed_over)
-		iplot(fig, filename='basic-line')
-
-	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False):
-		
-		full_data = self.get_data(data_type)
-		display_order = list(range(len(self.get_data("contrast"))))
-		display_order.sort(key=lambda x : self.get_data("contrast")[x])
-		full_data = [full_data[i] for i in display_order]
-		contrasts = [self.get_data("contrast")[i] for i in display_order]
-		data_averaged = []
-		for data in full_data:
-			data_averaged.append(self.average_over(data,time=False,channels=True,trials=True))
-		data_averaged = np.transpose(np.asarray(data_averaged))
-		final_data = self.array_smoother(data_averaged,smooth)
-		if clip:
-			final_data = np.clip(final_data,-10,1)
-		fig = self._core_figure_2(final_data,title,"Plop",contrasts)
-		iplot(fig, filename='basic-line')
-		
 
 	def plot_figure_1(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False):
 		title = "MUA over time "
@@ -97,6 +54,34 @@ class AbstractSession():
 		return data_averaged
 
 
+
+	def plot_figure_2(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,smooth=1,clip=None):
+		if ao_channels:
+			averaged_over = "channels"
+			displayed_over = "trials"
+		else:
+			averaged_over = "trials"
+			displayed_over = "channels"
+		title = "MUA over time over " + displayed_over + " averaged over " + averaged_over 
+		if data_type in ("seen","missed"):
+			if ao_contrast:
+				title += "averaged over contrast "
+			else:
+				title += " for contrast #" + str(contrast+1) + " and " 
+		title += data_type + " condition"
+		data = self.get_data(data_type)
+		if ao_contrast:
+			data_averaged = self.average_over(data,time=False,channels=ao_channels,trials=ao_trials,contrast=True)
+		else:
+			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
+		final_data = self.array_smoother(data_averaged,smooth)
+		if clip is not None:
+			final_data = np.clip(final_data,-10,clip)
+		fig = self._core_figure_2(final_data,title,displayed_over)
+		iplot(fig, filename='basic-line')
+		return final_data
+	
+
 	def plot_figure_3(self,data_type1,data_type2,contrast=0,title="Title not set yet",ao_channels=True,smooth=1,show=True):
 		d1 = self.get_data(data_type1)[contrast]
 		d2 = self.get_data(data_type2)[contrast]
@@ -111,6 +96,60 @@ class AbstractSession():
 		title += "for contrast #" + str(contrast+1) + " and " + data_type1 + " - " + data_type2 + " condition"
 		self._core_figure_1(data,title,smooth,show)
 
+	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False):
+		full_data = self.get_data(data_type)
+		display_order = list(range(len(self.get_data("contrast"))))
+		display_order.sort(key=lambda x : self.get_data("contrast")[x])
+		full_data = [full_data[i] for i in display_order]
+		contrasts = [self.get_data("contrast")[i] for i in display_order]
+		data_averaged = []
+		for data in full_data:
+			data_averaged.append(self.average_over(data,time=False,channels=True,trials=True))
+		data_averaged = np.transpose(np.asarray(data_averaged))
+		final_data = self.array_smoother(data_averaged,smooth)
+		if clip:
+			final_data = np.clip(final_data,-10,1)
+		fig = self._core_figure_2(final_data,title,"Plop",contrasts)
+		iplot(fig, filename='basic-line')
+
+	def plot_figure_5(self,data_type,contrast=0,title="Title not set yet",ao_channels=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False,baseline=False):
+		data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
+		#data_averaged = self.average_over(data[contrast],time=False,channels=False,trials=True)
+		data = data[contrast]
+		if clip:
+			data=np.clip(data,-10,1)
+		final_data = np.nanstd(data,2)
+		if baseline:
+			electrode_baseline = np.nanmean(final_data[0:self.stimulus_offset],0)
+			final_data = final_data - electrode_baseline
+		if ao_channels:
+			final_data = np.nanmean(final_data,1)
+		self._core_figure_1(final_data,title,smooth,show)
+		return final_data 
+
+	
+	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None)):
+		if time_window[1] is None:
+			time_window = (time_window[0],len(self.get_data("time")))
+		dim = len(full_data.shape)
+		if type(full_data)==np.float64:
+			print("Couldn't print the graph, empty data")
+			return
+		self._loop_figure_1(full_data,dim-1,smooth,time_window)
+		plt.title(title)
+		plt.xlabel("Time (ms)")
+		plt.ylabel("Multi Unit Activity")
+		if show:
+			plt.show()
+
+	def _loop_figure_1(self,data,i,smooth,time_window):
+		if i == 0:
+			data = self.smoother(data,smooth)
+			plt.plot(self.get_data("time")[time_window[0]:time_window[1]],data)
+		else:
+			for j in range(len(data[0])):
+				self._loop_figure_1(data[:,j],i-1,smooth,time_window)
+	
 	def _core_figure_2(self,full_data,title,ylabel,yaxis=None):
 		timing_step = self.get_data("time")
 		if yaxis is None:
@@ -153,28 +192,7 @@ class AbstractSession():
 		fig = go.Figure(data=data, layout=layout)
 		return fig
 
-	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None)):
-		if time_window[1] is None:
-			time_window = (time_window[0],len(self.get_data("time")))
-		dim = len(full_data.shape)
-		if type(full_data)==np.float64:
-			print("Couldn't print the graph, empty data")
-			return
-		self._loop_figure_1(full_data,dim-1,smooth,time_window)
-		plt.title(title)
-		plt.xlabel("Time (ms)")
-		plt.ylabel("Multi Unit Activity")
-		if show:
-			plt.show()
-
-	def _loop_figure_1(self,data,i,smooth,time_window):
-		if i == 0:
-			data = self.smoother(data,smooth)
-			plt.plot(self.get_data("time")[time_window[0]:time_window[1]],data)
-		else:
-			for j in range(len(data[0])):
-				self._loop_figure_1(data[:,j],i-1,smooth,time_window)
-			
+		
 #################################################################################################
 ## Miscallaneous functions
 
