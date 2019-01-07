@@ -124,25 +124,27 @@ class AbstractSession():
 		fig = go.Figure(data=data, layout=layout)
 		return fig
 
-	def _core_figure_1(self,full_data,title,smooth,show):
+	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None)):
+		if time_window[1] is None:
+			time_window = (time_window[0],len(self.get_data("time")))
 		dim = len(full_data.shape)
 		if type(full_data)==np.float64:
 			print("Couldn't print the graph, empty data")
 			return
-		self._loop_figure_1(full_data,dim-1,smooth)
+		self._loop_figure_1(full_data,dim-1,smooth,time_window)
 		plt.title(title)
 		plt.xlabel("Time (ms)")
 		plt.ylabel("Multi Unit Activity")
 		if show:
 			plt.show()
 
-	def _loop_figure_1(self,data,i,smooth):
+	def _loop_figure_1(self,data,i,smooth,time_window):
 		if i == 0:
 			data = self.smoother(data,smooth)
-			plt.plot(self.get_data("time"),data)
+			plt.plot(self.get_data("time")[time_window[0]:time_window[1]],data)
 		else:
 			for j in range(len(data[0])):
-				self._loop_figure_1(data[:,j],i-1,smooth)
+				self._loop_figure_1(data[:,j],i-1,smooth,time_window)
 			
 #################################################################################################
 ## Miscallaneous functions
@@ -153,10 +155,6 @@ class AbstractSession():
 			for trial_data in data:
 				trial_data_averaged = self.average_over(trial_data,time=time,channels=channels,trials=trials)
 				averaged_data.append(trial_data_averaged)
-
-			print(len(averaged_data))
-			for i in range(6):
-				print(averaged_data[i].shape)
 			data = np.asarray(averaged_data)
 			data = np.nanmean(averaged_data,0)
 		else:
@@ -167,6 +165,17 @@ class AbstractSession():
 			if time:
 				data = np.nanmean(data,0)
 		return data
+	
+	def var_over(self,data,time=False,channels=False,trials=False,contrast=False):
+		axis = ()
+		if trials:
+			axis += (2,)
+		if channels:
+			axis += (1,)
+		if time:
+			axis += (0,)
+		return np.nanstd(data,axis)
+
 
 	def smoother(self,data,window=10):
 		result = []
