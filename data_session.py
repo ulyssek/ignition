@@ -47,9 +47,16 @@ class Session(AbstractSession):
 	stimulus_offset = 228 #Magic number defining the stimulus offset
 
 
-	def __init__(self,file_name,directory_path="data/"):
+	def __init__(self,file_name,directory_path="data/",normalized=True):
 		self.raw_data = io.loadmat(directory_path+file_name)["DATA_SESSION"]
 		self.data = {}	
+		self.file_name = file_name
+		if normalized:
+			self.get_data("seen",normalized=True)
+			self.get_data("missed",normalized=True)
+			self.get_data("correct_rejections",normalized=True)
+			self.get_data("false_alarm",normalized=True)
+
 
 #################################################################################################
 ## Loading Data session
@@ -115,7 +122,7 @@ class Session(AbstractSession):
 			#Getting the normalisation factor
 			text = self.get_data("texture")[0]
 			electrode_texture_response = self.average_over(text,trials=True)
-			electrode_max_peak = np.max(electrode_texture_response-electrode_baseline,axis=0)
+			electrode_max_peak = np.max(electrode_texture_response[self.stimulus_offset:self.stimulus_offset+300]-electrode_baseline,axis=0)
 			
 			#Normalizing the data
 			for i in range(len(data)):

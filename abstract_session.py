@@ -28,7 +28,7 @@ class AbstractSession():
 ## Ploting functions
 
 
-	def plot_figure_2(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,smooth=1):
+	def plot_figure_2(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,smooth=1,clip=False):
 		if ao_channels:
 			averaged_over = "channels"
 			displayed_over = "trials"
@@ -48,10 +48,30 @@ class AbstractSession():
 		else:
 			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
 		final_data = self.array_smoother(data_averaged,smooth)
+		if clip:
+			final_data = np.clip(final_data,-10,1)
 		fig = self._core_figure_2(final_data,title,displayed_over)
 		iplot(fig, filename='basic-line')
 
-	def plot_figure_1(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True):
+	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False):
+		
+		full_data = self.get_data(data_type)
+		display_order = list(range(len(self.get_data("contrast"))))
+		display_order.sort(key=lambda x : self.get_data("contrast")[x])
+		full_data = [full_data[i] for i in display_order]
+		contrasts = [self.get_data("contrast")[i] for i in display_order]
+		data_averaged = []
+		for data in full_data:
+			data_averaged.append(self.average_over(data,time=False,channels=True,trials=True))
+		data_averaged = np.transpose(np.asarray(data_averaged))
+		final_data = self.array_smoother(data_averaged,smooth)
+		if clip:
+			final_data = np.clip(final_data,-10,1)
+		fig = self._core_figure_2(final_data,title,"Plop",contrasts)
+		iplot(fig, filename='basic-line')
+		
+
+	def plot_figure_1(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False):
 		title = "MUA over time "
 		if ao_channels or ao_contrast:
 			title += "averaged over channels "
@@ -71,8 +91,10 @@ class AbstractSession():
 			data_averaged = self.average_over(data,time=False,channels=True,trials=True,contrast=True)
 		else:
 			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
-			
+		if clip:
+			data_averaged=np.clip(data_averaged,-10,1)	
 		self._core_figure_1(data_averaged,title,smooth,show)
+		return data_averaged
 
 
 	def plot_figure_3(self,data_type1,data_type2,contrast=0,title="Title not set yet",ao_channels=True,smooth=1,show=True):
@@ -89,12 +111,14 @@ class AbstractSession():
 		title += "for contrast #" + str(contrast+1) + " and " + data_type1 + " - " + data_type2 + " condition"
 		self._core_figure_1(data,title,smooth,show)
 
-	def _core_figure_2(self,full_data,title,ylabel):
+	def _core_figure_2(self,full_data,title,ylabel,yaxis=None):
 		timing_step = self.get_data("time")
+		if yaxis is None:
+			yaxis = range(len(full_data[0]))
 		data = [
 		go.Heatmap(z=full_data,
 			x=np.asarray(timing_step),
-			y=np.asarray(range(len(full_data[0]))),
+			y=np.asarray(yaxis),
 			)
 		]
 		layout = go.Layout(
