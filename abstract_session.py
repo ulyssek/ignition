@@ -96,7 +96,7 @@ class AbstractSession():
 		title += "for contrast #" + str(contrast+1) + " and " + data_type1 + " - " + data_type2 + " condition"
 		self._core_figure_1(data,title,smooth,show)
 
-	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False):
+	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False,ylabel=""):
 		full_data = self.get_data(data_type)
 		display_order = list(range(len(self.get_data("contrast"))))
 		display_order.sort(key=lambda x : self.get_data("contrast")[x])
@@ -109,10 +109,10 @@ class AbstractSession():
 		final_data = self.array_smoother(data_averaged,smooth)
 		if clip:
 			final_data = np.clip(final_data,-10,1)
-		fig = self._core_figure_2(final_data,title,"Plop",contrasts)
+		fig = self._core_figure_2(final_data,title,ylabel,contrasts)
 		iplot(fig, filename='basic-line')
 
-	def plot_figure_5(self,data_type,contrast=0,title="Title not set yet",ao_channels=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False,baseline=False):
+	def plot_figure_5(self,data_type,contrast=0,title="Title not set yet",ao_channels=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False,baseline=False,ylabel="Variance"):
 		data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
 		#data_averaged = self.average_over(data[contrast],time=False,channels=False,trials=True)
 		data = data[contrast]
@@ -124,11 +124,11 @@ class AbstractSession():
 			final_data = final_data - electrode_baseline
 		if ao_channels:
 			final_data = np.nanmean(final_data,1)
-		self._core_figure_1(final_data,title,smooth,show)
+		self._core_figure_1(final_data,title,smooth,show,ylabel=ylabel)
 		return final_data 
 
 	
-	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None)):
+	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None),ylabel="Multi Unie Activity"):
 		if time_window[1] is None:
 			time_window = (time_window[0],len(self.get_data("time")))
 		dim = len(full_data.shape)
@@ -138,7 +138,7 @@ class AbstractSession():
 		self._loop_figure_1(full_data,dim-1,smooth,time_window)
 		plt.title(title)
 		plt.xlabel("Time (ms)")
-		plt.ylabel("Multi Unit Activity")
+		plt.ylabel(ylabel)
 		if show:
 			plt.show()
 
