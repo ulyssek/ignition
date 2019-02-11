@@ -30,11 +30,11 @@ import re
 class MultipleSessions(AbstractSession):
 
 
-	def __init__(self,cortical_area=None,file_names=[],directory_path="data/",excluded=[],normalized=False):
+	def __init__(self,cortical_area=None,file_names=[],directory_path="data/",excluded=[],normalized=False,monkey=""):
 		if cortical_area is not None:
 			file_names = []
 			files = os.listdir("./"+directory_path)
-			pattern = re.compile('^'+cortical_area+'_SESSION_*')
+			pattern = re.compile('^'+cortical_area+'_SESSION_'+monkey+'.*')
 			for file_name in files:
 				if pattern.match(file_name) and file_name not in excluded:
 					file_names.append(file_name)

@@ -44,7 +44,6 @@ from abstract_session import AbstractSession
 
 class Session(AbstractSession):
 	
-	stimulus_offset = 228 #Magic number defining the stimulus offset
 
 
 	def __init__(self,file_name,directory_path="data/",normalized=True):
@@ -114,19 +113,24 @@ class Session(AbstractSession):
 		else:
 			raise(BaseException("Data Type not found"))
 		if normalized:
+			"""
 			#Getting the baseline
 			electrode_averaged = self.average_over(data,trials=True,contrast=True)
 			electrode_averaged = electrode_averaged[0:self.stimulus_offset]
 			electrode_baseline = self.average_over(electrode_averaged,time=True)
+			"""
 			
 			#Getting the normalisation factor
 			text = self.get_data("texture")[0]
 			electrode_texture_response = self.average_over(text,trials=True)
+			electrode_baseline = self.average_over(electrode_texture_response[:self.stimulus_offset],time=True)
 			electrode_max_peak = np.max(electrode_texture_response[self.stimulus_offset:self.stimulus_offset+300]-electrode_baseline,axis=0)
-			
 			#Normalizing the data
 			for i in range(len(data)):
-				data[i] = np.swapaxes((np.swapaxes(data[i],1,2)-electrode_baseline)/electrode_max_peak,1,2)
+				try:
+					data[i] = np.swapaxes((np.swapaxes(data[i],1,2)-electrode_baseline)/electrode_max_peak,1,2)
+				except np.AxisError:
+					data[i] = (data[i]-electrode_baseline)/electrode_max_peak
 		if not (low_contrast and medium_contrast and high_contrast):
 			index = self.get_contrast_index(low_contrast,medium_contrast,high_contrast)
 			data = data[index]

@@ -23,12 +23,16 @@ init_notebook_mode(connected=True)
 class AbstractSession():
 
 	stimulus_offset = 228 #Magic number defining the stimulus offset
+	stimulus_end = 428 #Magic number defining the end of the stimulus peak response
 
 	
 #################################################################################################
 ## Ploting functions
 
 	def plot_figure_1(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False):
+		if data_type in ("false_alarm","correct_rejections"):
+			contrast = 0
+			print("No contrast for false alarms or correct rejections")
 		title = "MUA over time "
 		if ao_channels or ao_contrast:
 			title += "averaged over channels "
@@ -121,11 +125,31 @@ class AbstractSession():
 		final_data = np.nanstd(data,2)
 		if baseline:
 			electrode_baseline = np.nanmean(final_data[0:self.stimulus_offset],0)
-			final_data = final_data - electrode_baseline
+			final_data = final_data/electrode_baseline
 		if ao_channels:
 			final_data = np.nanmean(final_data,1)
 		self._core_figure_1(final_data,title,smooth,show,ylabel=ylabel)
 		return final_data 
+
+	def plot_figure_6(self,data_type,contrast=0,channel=0,mmin=-0.3,mmax=1,array_size=1000,smoothing=30):
+		if data_type in ("false_alarm","correct_rejections"):
+			contrast = 0
+			print("No contrast for false alarms or correct rejections")
+		a = self.get_data(data_type)[contrast][:,channel,:]
+		step = (mmax-mmin)/array_size
+		vect = np.arange(mmin,mmax+step,step)[:array_size+1]
+		"""
+		c = np.zeros((763,array_size))
+
+		for i,x in enumerate(a):
+			a,b = np.histogram(x,vect)
+			c[i] = a
+		d = self.array_smoother(np.transpose(c),smoothing,2)
+		"""
+		d = self.get_smoothed_hist(a,smoothing,array_size,mmin,mmax)
+		fig = self._core_figure_2(d,"Distribution over trials","MUA",vect)
+		iplot(fig, filename='basic-line')
+		return d
 
 	
 	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None),ylabel="Multi Unie Activity"):
@@ -234,12 +258,26 @@ class AbstractSession():
 			a = data[int(max(0,i-window/2)):int(min(len(data-1),i+window/2))]
 			result.append(np.mean(a))
 		return result
+		#TO BE FIXED, nice way to smooth still have edge effects
+		box = np.ones(window)/window
+		result = np.convolve(data,box,mode='same') 
+		return result
 
-	def array_smoother(self,data,window=50):
-		smoothed_data = []
-		for i in range(len(data[0])):
-			smoothed_data.append(self.smoother(data[:,i]-np.nanmean(data[:,i],axis=0),window))
-		return np.asarray(smoothed_data)
+
+	def smoother2(self,data,window=10):
+		#TO BE FIXED, nice way to smooth still have edge effects
+		box = np.ones(window)/window
+		result = np.convolve(data,box,mode='same') 
+		return result
+
+	def array_smoother(self,data,window=50,b=0):
+		#Function smoothing all the vector of a 2d numpy array
+		if b == 0:
+			smoothed_data = np.apply_along_axis(lambda x : self.smoother(x,window),0,data)
+		else:
+			smoothed_data = np.apply_along_axis(lambda x : self.smoother2(x,window),0,data)
+			
+		return smoothed_data
 
 	def remove_corrupted_channels(self,data_type):
 		for i in range(len(self.data[data_type])):
@@ -268,5 +306,51 @@ class AbstractSession():
 			elif high_contrast and contrast_performance[i] > 0.8:
 				contrast_index.append(i)
 		return contrast_index
-			
+	
+	def get_contrast_number(self):
+		return len(self.get_data("contrast"))
+	
+	def get_channel_number(self):
+		return len(self.get_data("false_alarm")[0][0])
 
+	def get_time_step(self):
+		t = self.get_data("time")
+		return t[1]-t[0]
+
+	def get_snr(self,data_type,talkative=False):
+		#Ratio is computed for seen trials
+		seen_data = self.get_data("seen")
+		result = []
+		if data_type == "contrast":
+			item_number = self.get_contrast_number()
+			foo = lambda i : self.average_over(seen_data[i],time=False,channels=True,trials=True)
+		elif data_type == "channel":
+			item_number = self.get_channel_number()
+			foo = lambda i : self.average_over(seen_data,time=False,channels=False,trials=True,contrast=True)[:,i]
+		else:
+			print("data type not recognized")
+			return
+		for i in range(item_number):
+			averaged_data = foo(i)
+			noise_amplitude = np.std(averaged_data[:self.stimulus_offset])
+			signal_peak = np.max(averaged_data[self.stimulus_offset:self.stimulus_end])
+			snr = signal_peak/noise_amplitude
+			if talkative:
+				print("SNR for " + data_type + " #" + str(i) + " : " + str(round(snr,2)))
+			result.append(snr)	
+		return result	
+			
+	def get_smoothed_hist(self,data,smoothing,array_size,mmin,mmax):
+
+		step = (mmax-mmin)/array_size
+		vect = np.arange(mmin,mmax+step,step)[:array_size+1]
+
+		#Building histogram
+		c = np.zeros((763,array_size))
+		for i,x in enumerate(data):
+			a,b = np.histogram(x,vect)
+			c[i] = a
+
+		#Smoothing
+		d = self.array_smoother(np.transpose(c),smoothing,2)
+		return d
