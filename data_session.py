@@ -50,6 +50,8 @@ class Session(AbstractSession):
 		self.raw_data = io.loadmat(directory_path+file_name)["DATA_SESSION"]
 		self.data = {}	
 		self.file_name = file_name
+		self.session = file_name.split("SESSION_")[1].split(".")[0]
+		self.directory_path = directory_path
 		if normalized:
 			self.get_data("seen",normalized=True)
 			self.get_data("missed",normalized=True)
@@ -98,6 +100,15 @@ class Session(AbstractSession):
 		elif data_type == "time":
 			data = full_data["SessionInfo"][0][0]["Time"][0][0][0]*1000
 			self.data[data_type] = data
+		elif data_type == "session":
+			data = np.asarray([self.session]*self.get_contrast_number())
+			self.data[data_type] = data
+		elif data_type == "best_channel":
+			data = np.asarray([self.get_best_snr("channel")]*self.get_contrast_number())
+			self.data[data_type] = data
+		elif data_type == "contrast_snr":
+			data = np.asarray(self.get_snr("contrast"))
+			self.data[data_type] = data
 		elif data_type == "contrast":
 			data = full_data["SessionInfo"][0][0]["Contrasts"][0][0][0]
 			self.data[data_type] = data
@@ -106,10 +117,42 @@ class Session(AbstractSession):
 			miss_trials = self.get_data("missed")
 			hit_trials = self.get_data("seen")
 			for i in range(len(hit_trials)):
-				hit = len(hit_trials[i][0][0])
-				miss = len(miss_trials[i][0][0])
+				if hit_trials[i].ndim == 3:
+					hit = len(hit_trials[i][0][0])
+				elif hit_trials[i].ndim == 2:
+					hit = len(hit_trials[i][0])
+				else:
+					print("Warning, data shape not recognized")
+				if miss_trials[i].ndim == 3:
+					miss = len(miss_trials[i][0][0])
+				elif hit_trials[i].ndim == 2:
+					miss = len(miss_trials[i][0])
+				else:
+					print("Warning, data shape not recognized")
 				data.append(hit/(hit+miss))
 			self.data[data_type] = np.asarray(data)
+		elif data_type == "contrast_category":
+			mua_file_name = self.session + "_MUA.mat" 
+			raw_data = io.loadmat(self.directory_path+mua_file_name)
+			all_contrast_type = raw_data["MUA"][0][0]["INFO"][0][0]["Categorie"][0]
+			hit = raw_data["MUA"][0][0]["LUM"]["psMS_S"][0]
+			miss = raw_data["MUA"][0][0]["LUM"]["psMS_M"][0]
+
+			def get_trial_number(x):
+				if x.ndim == 3:
+					return len(x[0,0,:])
+				elif x.ndim == 2:
+					return 1
+				else:
+					print("Unexpected data shape")
+
+			hit = np.asarray(list(map(get_trial_number,hit)))
+			miss = np.asarray(list(map(get_trial_number,miss)))
+
+			mask = (hit >= 3) & (miss >= 3)
+			contrast_type = all_contrast_type[mask]
+			data = np.asarray(contrast_type)
+			self.data[data_type] = data
 		else:
 			raise(BaseException("Data Type not found"))
 		if normalized:

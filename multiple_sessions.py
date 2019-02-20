@@ -72,3 +72,5 @@ class MultipleSessions(AbstractSession):
 			self.data[data_type] = np.concatenate(data)
 		return self.data[data_type]
 
+
+

@@ -29,20 +29,22 @@ class AbstractSession():
 #################################################################################################
 ## Ploting functions
 
-	def plot_figure_1(self,data_type,contrast=0,title="Title not set yet",ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False):
+	def plot_figure_1(self,data_type,contrast=0,title=None,ao_channels=True,ao_trials=False,ao_contrast=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False,channel=None,talkative=True):
 		if data_type in ("false_alarm","correct_rejections"):
 			contrast = 0
-			print("No contrast for false alarms or correct rejections")
-		title = "MUA over time "
-		if ao_channels or ao_contrast:
-			title += "averaged over channels "
-		if ao_trials or ao_contrast:
-			title += "averaged over trials "
-		if ao_contrast:
-			title += "averaged over contrast"
-		else:
-			title += "for contrast #" + str(contrast+1) 
-		title += " and " + str(data_type) + " condition"
+			if talkative:
+				print("No contrast for false alarms or correct rejections")
+		if title is None:
+			title = "MUA over time "
+			if ao_channels or ao_contrast:
+				title += "averaged over channels "
+			if ao_trials or ao_contrast:
+				title += "averaged over trials "
+			if ao_contrast:
+				title += "averaged over contrast"
+			else:
+				title += "for contrast #" + str(contrast+1) 
+			title += " and " + str(data_type) + " condition"
 		if type(data_type) == type("str"):
 			data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
 		else:
@@ -51,7 +53,13 @@ class AbstractSession():
 		if ao_contrast:
 			data_averaged = self.average_over(data,time=False,channels=True,trials=True,contrast=True)
 		else:
-			data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
+			if channel is not None:
+				data = data[contrast][:,channel,:]
+				#Must make an ugly trick in this case
+				if ao_trials:
+					data_averaged = np.nanmean(data,1)
+			else:
+				data_averaged = self.average_over(data[contrast],time=False,channels=ao_channels,trials=ao_trials)
 		if clip:
 			data_averaged=np.clip(data_averaged,-10,1)	
 		self._core_figure_1(data_averaged,title,smooth,show)
@@ -100,21 +108,36 @@ class AbstractSession():
 		title += "for contrast #" + str(contrast+1) + " and " + data_type1 + " - " + data_type2 + " condition"
 		self._core_figure_1(data,title,smooth,show)
 
-	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False,ylabel=""):
+	def plot_figure_4(self,data_type,title="Title not set yet",smooth=1,clip=False,ylabel="",sort=True,best_channel=False,bound=None):
 		full_data = self.get_data(data_type)
 		display_order = list(range(len(self.get_data("contrast"))))
-		display_order.sort(key=lambda x : self.get_data("contrast")[x])
+		if sort:
+			display_order = self.get_display_order()
+		else:
+			display_order = list(range(len(self.get_data("contrast"))))
+			#display_order.sort(key=lambda x : 100*self.get_data("contrast_category")[x]+self.get_data("contrast_performance")[x])
 		full_data = [full_data[i] for i in display_order]
 		contrasts = [self.get_data("contrast")[i] for i in display_order]
+		contrasts = list(range(len(full_data))) #TO BE FIXED
+		if best_channel:
+			best_channels = [self.get_data("best_channel")[i] for i in display_order]
 		data_averaged = []
-		for data in full_data:
-			data_averaged.append(self.average_over(data,time=False,channels=True,trials=True))
-		data_averaged = np.transpose(np.asarray(data_averaged))
-		final_data = self.array_smoother(data_averaged,smooth)
+		for i,data in enumerate(full_data):
+			if best_channel:
+				temp = self.average_over(data,time=False,channels=False,trials=True)
+				temp = temp[:,best_channels[i]]
+			else:
+				temp = self.average_over(data,time=False,channels=True,trials=True)
+			temp_smoothed = self.smoother(temp,smooth)
+			data_averaged.append(temp_smoothed)#self.average_over(data,time=False,channels=True,trials=True))
+		data_averaged = np.asarray(data_averaged)
+		final_data = data_averaged
+		#final_data = self.array_smoother(data_averaged,smooth)
 		if clip:
 			final_data = np.clip(final_data,-10,1)
-		fig = self._core_figure_2(final_data,title,ylabel,contrasts)
+		fig = self._core_figure_2(final_data,title,ylabel,contrasts,bound=bound)
 		iplot(fig, filename='basic-line')
+		return final_data
 
 	def plot_figure_5(self,data_type,contrast=0,title="Title not set yet",ao_channels=False,low_contrast=True,medium_contrast=True,high_contrast=True,smooth=1,show=True,clip=False,baseline=False,ylabel="Variance"):
 		data = self.get_data(data_type,low_contrast=low_contrast,medium_contrast=medium_contrast,high_contrast=high_contrast)
@@ -151,6 +174,47 @@ class AbstractSession():
 		iplot(fig, filename='basic-line')
 		return d
 
+	def plot_contrast_vs_contrast_performance(self):
+		plt.plot(self.get_data("contrast"),self.get_data("contrast_performance"))
+		plt.title("Contrast vs Contrast Performance")
+		plt.xlabel("Contrast value")
+		plt.ylabel("Contrast performance") 
+		plt.show()
+
+	def plot_average_MUA(self,fig_size=12):
+		fig=plt.figure(figsize=(4, 4))
+		fig.set_figheight(fig_size)
+		fig.set_figwidth(fig_size)
+		columns = 2
+		rows = 2
+		data_types = ("seen","false_alarm","missed","correct_rejections")
+		for i in range(1,columns*rows+1):
+			fig.add_subplot(rows, columns,i)
+			self.plot_figure_1(data_types[i-1],ao_channels=True,ao_contrast=True,ao_trials=True,show=False,title=data_types[i-1],talkative=False) 
+		plt.show()
+
+	def plot_best_snr_MUA(self,fig_size=12):
+		channel = self.get_best_snr("channel")
+		contrast = self.get_best_snr("contrast")
+		fig = plt.figure(figsize=(4,4))
+		fig.set_figheight(fig_size)
+		fig.set_figwidth(fig_size)
+		columns = 2
+		rows = 2
+		data_types = ("seen","false_alarm","missed","correct_rejections")
+		for i in range(1,columns*rows+1):
+			fig.add_subplot(rows,columns,i)
+			a = self.plot_figure_1(data_types[i-1],contrast=contrast,ao_channels=False,ao_contrast=False,ao_trials=True,show=False,title=data_types[i-1],channel=channel,talkative=False) 
+		plt.show()
+	
+	def plot_trial_number(self):
+		hit_trials = list(map(lambda x : len(x[0,0,:]),self.get_data("seen")))
+		miss_trials = list(map(lambda x : len(x[0,0,:]),self.get_data("missed")))
+		contrast = self.get_data("contrast")
+		plt.plot(contrast,hit_trials)
+		plt.plot(contrast,miss_trials)
+		plt.show()
+
 	
 	def _core_figure_1(self,full_data,title,smooth,show,time_window=(0,None),ylabel="Multi Unie Activity"):
 		if time_window[1] is None:
@@ -174,15 +238,24 @@ class AbstractSession():
 			for j in range(len(data[0])):
 				self._loop_figure_1(data[:,j],i-1,smooth,time_window)
 	
-	def _core_figure_2(self,full_data,title,ylabel,yaxis=None):
+	def _core_figure_2(self,full_data,title,ylabel,yaxis=None,bound=None):
 		timing_step = self.get_data("time")
 		if yaxis is None:
 			yaxis = range(len(full_data[0]))
+		kwargs = {
+			"z":full_data,
+			"x":np.asarray(timing_step),
+			"y":np.asarray(yaxis),
+		}
+		if bound is not None:
+			kwargs["zmin"]=bound[0]
+			kwargs["zmax"]=bound[1]
 		data = [
-		go.Heatmap(z=full_data,
-			x=np.asarray(timing_step),
-			y=np.asarray(yaxis),
-			)
+		go.Heatmap(**kwargs)
+			#z=full_data,
+			#x=np.asarray(timing_step),
+			#y=np.asarray(yaxis),
+			#)
 		]
 		layout = go.Layout(
 			title=title,
@@ -258,11 +331,6 @@ class AbstractSession():
 			a = data[int(max(0,i-window/2)):int(min(len(data-1),i+window/2))]
 			result.append(np.mean(a))
 		return result
-		#TO BE FIXED, nice way to smooth still have edge effects
-		box = np.ones(window)/window
-		result = np.convolve(data,box,mode='same') 
-		return result
-
 
 	def smoother2(self,data,window=10):
 		#TO BE FIXED, nice way to smooth still have edge effects
@@ -297,13 +365,14 @@ class AbstractSession():
 
 	def get_contrast_index(self,low_contrast=True,medium_contrast=True,high_contrast=True):
 		contrast_performance = self.get_data("contrast_performance")
+		contrast_category = self.get_data("contrast_category")
 		contrast_index = []
 		for i in range(len(contrast_performance)):
-			if low_contrast and contrast_performance[i] <= 0.2:
+			if low_contrast and contrast_category[i] == 1:
 				contrast_index.append(i)
-			elif medium_contrast and contrast_performance[i] <= 0.8 and contrast_performance[i] > 0.2:
+			elif medium_contrast and contrast_category[i] == 2: 
 				contrast_index.append(i)
-			elif high_contrast and contrast_performance[i] > 0.8:
+			elif high_contrast and contrast_category[i] == 3:
 				contrast_index.append(i)
 		return contrast_index
 	
@@ -311,7 +380,7 @@ class AbstractSession():
 		return len(self.get_data("contrast"))
 	
 	def get_channel_number(self):
-		return len(self.get_data("false_alarm")[0][0])
+		return len(self.get_data("seen")[0][0])
 
 	def get_time_step(self):
 		t = self.get_data("time")
@@ -354,3 +423,39 @@ class AbstractSession():
 		#Smoothing
 		d = self.array_smoother(np.transpose(c),smoothing,2)
 		return d
+
+	def get_best_snr(self,data_type):
+		return np.argmax(self.get_snr(data_type,False))
+
+	def session_overview(self):
+		##############################################
+		## Printing snr
+
+		self.get_snr("channel",talkative=True)
+		self.get_snr("contrast",talkative=True)
+		##############################################
+		## Printing contrast vs contrast performance
+
+		self.plot_contrast_vs_contrast_performance()	
+
+		self.plot_trial_number()
+
+
+		##############################################
+		## Plotting average MUA
+		
+		print("Average MUA")
+		self.plot_average_MUA()
+		print("Best SNR (contrast and channel) MUA")
+		self.plot_best_snr_MUA()
+
+	def get_display_order(self):
+		display_order = list(range(len(self.get_data("contrast"))))
+		display_order.sort(key=lambda x : 100*self.get_data("contrast_category")[x]+self.get_data("contrast_performance")[x])
+		return display_order
+
+
+
+
+
+
