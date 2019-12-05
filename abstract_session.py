@@ -782,4 +782,3 @@ class AbstractSession():
 			fully_flatten_data = np.ones((self.get_step_number(),0)) 
 
 		return fully_flatten_data
-
