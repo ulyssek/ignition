@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 from math import isnan
 import numpy.ma as ma
 
-import plotly.plotly as py
+import chart_studio.plotly as py
 import plotly.graph_objs as go
 from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
 init_notebook_mode(connected=True)
@@ -46,10 +46,14 @@ class Session(AbstractSession):
 	
 
 
-	def __init__(self,file_name,directory_path="data/",normalized=True):
+	def __init__(self,file_name,directory_path="data/",normalized=True,new_norm=False):
 		self.raw_data = io.loadmat(directory_path+file_name)["DATA_SESSION"]
 		self.data = {}	
 		self.file_name = file_name
+		self.session = file_name.split("SESSION_")[1].split(".")[0]
+		self.directory_path = directory_path
+		self.stimulus_offset = 228
+		self.new_norm = new_norm
 		if normalized:
 			self.get_data("seen",normalized=True)
 			self.get_data("missed",normalized=True)
@@ -63,9 +67,9 @@ class Session(AbstractSession):
 	def get_data(self,data_type,low_contrast=True,medium_contrast=True,high_contrast=True,average_over_trials=False,normalized=False):
 		if data_type in self.data.keys():
 			data = self.data[data_type]
-			if not (low_contrast and medium_contrast and high_contrast):
+			if (not (low_contrast and medium_contrast and high_contrast)) and data_type in ("seen", "missed","present","best_channel"):
 				index = self.get_contrast_index(low_contrast,medium_contrast,high_contrast)
-				data = data[index]
+				data = [data[i] for i in index]
 			return data
 		full_data = self.raw_data
 		if average_over_trials:
@@ -76,27 +80,68 @@ class Session(AbstractSession):
 			#We add here a default contrast for the correct_rejections trials
 			data = full_data["Conditions"][0][0][text][0][0]["CR"][0]
 			self.data[data_type] = data
+			self.format_data(data_type)
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "false_alarm":
 			#We add here a default contrast for the false_alarm trials
 			data = full_data["Conditions"][0][0][text][0][0]["FA"][0]
 			self.data[data_type] = data
+			self.format_data(data_type)
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "seen":
 			data = full_data["Conditions"][0][0][text][0][0]["LUM"][0][0]["Seen"][0]
 			self.data[data_type] = data
+			self.format_data(data_type)
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "missed":
 			data = full_data["Conditions"][0][0][text][0][0]["LUM"][0][0]["Missed"][0]
 			self.data[data_type] = data
+			self.format_data(data_type)
 			self.remove_corrupted_channels(data_type)
+		elif data_type == "present":
+			seen = self.get_data("seen")
+			missed = self.get_data("missed")
+			contrast_number = len(seen)
+			data = []
+			for i in range(contrast_number):
+				data.append(np.concatenate((seen[i],missed[i]),axis=2))
+			self.data[data_type] = data
+		elif data_type == "absent":
+			seen = self.get_data("false_alarm")
+			missed = self.get_data("correct_rejections")
+			contrast_number = len(seen)
+			data = []
+			for i in range(contrast_number):
+				if seen[i].shape[2] == 0:
+					data.append(missed[i])
+				elif missed[i].shape[2] == 0:
+					data.append(seen[i])
+				else: 
+					data.append(np.concatenate((seen[i],missed[i]),axis=2))
+			self.data[data_type] = data
+		elif data_type == "all":
+			present = self.get_data("present")
+			absent = self.get_data("absent")
+			for d in absent:
+				present.append(d)
+			self.data[data_type] = present
 		elif data_type == "texture":
 			#We add here a default contrast for the texture trials
 			data = full_data["Conditions"][0][0][text][0][0]["Text"][0]
 			self.data[data_type] = data
+			self.format_data(data_type)
 			self.remove_corrupted_channels(data_type)
 		elif data_type == "time":
 			data = full_data["SessionInfo"][0][0]["Time"][0][0][0]*1000
+			self.data[data_type] = data
+		elif data_type == "session":
+			data = np.asarray([self.session]*self.get_contrast_number())
+			self.data[data_type] = data
+		elif data_type == "best_channel":
+			data = np.asarray([self.get_best_snr("channel")]*self.get_contrast_number())
+			self.data[data_type] = data
+		elif data_type == "contrast_snr":
+			data = np.asarray(self.get_snr("contrast"))
 			self.data[data_type] = data
 		elif data_type == "contrast":
 			data = full_data["SessionInfo"][0][0]["Contrasts"][0][0][0]
@@ -106,10 +151,46 @@ class Session(AbstractSession):
 			miss_trials = self.get_data("missed")
 			hit_trials = self.get_data("seen")
 			for i in range(len(hit_trials)):
-				hit = len(hit_trials[i][0][0])
-				miss = len(miss_trials[i][0][0])
+				if hit_trials[i].ndim == 3:
+					hit = len(hit_trials[i][0][0])
+				elif hit_trials[i].ndim == 2:
+					hit = len(hit_trials[i][0])
+				else:
+					print("Warning, data shape not recognized")
+				if miss_trials[i].ndim == 3:
+					miss = len(miss_trials[i][0][0])
+				elif hit_trials[i].ndim == 2:
+					miss = len(miss_trials[i][0])
+				else:
+					print("Warning, data shape not recognized")
 				data.append(hit/(hit+miss))
 			self.data[data_type] = np.asarray(data)
+		elif data_type == "contrast_trials":
+			data = self.get_data("present")
+			data = list(map(lambda x : x.shape[2],data))
+			self.data[data_type] = np.asarray(data)
+		elif data_type == "contrast_category":
+			mua_file_name = self.session + "_MUA.mat" 
+			raw_data = io.loadmat(self.directory_path+mua_file_name)
+			all_contrast_type = raw_data["MUA"][0][0]["INFO"][0][0]["Categorie"][0]
+			hit = raw_data["MUA"][0][0]["LUM"]["psMS_S"][0]
+			miss = raw_data["MUA"][0][0]["LUM"]["psMS_M"][0]
+
+			def get_trial_number(x):
+				if x.ndim == 3:
+					return len(x[0,0,:])
+				elif x.ndim == 2:
+					return 1
+				else:
+					print("Unexpected data shape")
+
+			hit = np.asarray(list(map(get_trial_number,hit)))
+			miss = np.asarray(list(map(get_trial_number,miss)))
+
+			mask = (hit >= 3) & (miss >= 3)
+			contrast_type = all_contrast_type[mask]
+			data = np.asarray(contrast_type)
+			self.data[data_type] = data
 		else:
 			raise(BaseException("Data Type not found"))
 		if normalized:
@@ -123,16 +204,36 @@ class Session(AbstractSession):
 			#Getting the normalisation factor
 			text = self.get_data("texture")[0]
 			electrode_texture_response = self.average_over(text,trials=True)
-			electrode_baseline = self.average_over(electrode_texture_response[:self.stimulus_offset],time=True)
-			electrode_max_peak = np.max(electrode_texture_response[self.stimulus_offset:self.stimulus_offset+300]-electrode_baseline,axis=0)
+			electrode_texture_baseline = self.average_over(electrode_texture_response[:self.stimulus_offset],time=True)
+
+
+			if self.new_norm:
+				temp_session = Session(self.file_name,normalized=False)
+
+				present_data = temp_session.get_data("present")
+				absent_data = temp_session.get_data("absent")
+				all_data = present_data+absent_data
+				all_data = np.concatenate(all_data,2)
+
+				electrode_baseline = temp_session.average_over(all_data[:self.stimulus_offset,:,:],time=True,trials=True)
+			else:
+				electrode_baseline = electrode_texture_baseline
+
+			electrode_max_peak = np.max(electrode_texture_response[self.stimulus_offset:self.stimulus_offset+300]-electrode_texture_baseline,axis=0)
 			#Normalizing the data
 			for i in range(len(data)):
 				try:
 					data[i] = np.swapaxes((np.swapaxes(data[i],1,2)-electrode_baseline)/electrode_max_peak,1,2)
 				except np.AxisError:
 					data[i] = (data[i]-electrode_baseline)/electrode_max_peak
-		if not (low_contrast and medium_contrast and high_contrast):
+		if (not (low_contrast and medium_contrast and high_contrast)) and data_type in ("seen","missed","present","best_channel"):
 			index = self.get_contrast_index(low_contrast,medium_contrast,high_contrast)
-			data = data[index]
+			data = [data[i] for i in index]
 		return data
+
+
+	def get_false_alarm_ratio(self):
+		return float(len(self.get_data("false_alarm")[0][0,0,:])/(len(self.get_data("false_alarm")[0][0,0,:])+len(self.get_data("correct_rejections")[0][0,0,:])))
+
+
 
